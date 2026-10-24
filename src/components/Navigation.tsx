@@ -4,11 +4,13 @@ import { Menu, X } from 'lucide-react';
 interface NavigationProps {
   onOpenRegister: () => void;
   showBrandLogo: boolean;
+  onNavigateTo?: (sectionId: string) => void;
 }
 
 export const Navigation: React.FC<NavigationProps> = ({
   onOpenRegister,
   showBrandLogo,
+  onNavigateTo,
 }) => {
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
 
@@ -44,15 +46,17 @@ export const Navigation: React.FC<NavigationProps> = ({
     };
   }, [isMobileMenuOpen]);
 
-  const handleMobileNavClick = (e: React.MouseEvent<HTMLAnchorElement>, targetId: string) => {
+  const handleNavClick = (e: React.MouseEvent<HTMLAnchorElement>, targetId: string) => {
     e.preventDefault();
     setIsMobileMenuOpen(false);
-    setTimeout(() => {
+    if (onNavigateTo) {
+      onNavigateTo(targetId);
+    } else {
       const el = document.getElementById(targetId);
       if (el) {
         el.scrollIntoView({ behavior: 'smooth' });
       }
-    }, 150);
+    }
   };
 
   return (
@@ -68,10 +72,11 @@ export const Navigation: React.FC<NavigationProps> = ({
           {/* Zone 1: Mask Motif + Brand Wordmark */}
           <div className="flex items-center gap-3 shrink-0">
             <a
-              href="#"
+              href="#hero-scroll-container"
+              onClick={(e) => handleNavClick(e, 'hero-scroll-container')}
               className={`flex items-center gap-2.5 transition-all duration-400 min-h-[44px] min-w-[44px] ${
                 showBrandLogo
-                  ? 'opacity-100 translate-x-0 pointer-events-auto'
+                  ? 'opacity-100 translate-x-0 pointer-events-auto cursor-pointer'
                   : 'opacity-0 -translate-x-3 pointer-events-none md:opacity-0'
               }`}
             >
@@ -90,33 +95,39 @@ export const Navigation: React.FC<NavigationProps> = ({
             </a>
           </div>
 
-          {/* Zone 2: Desktop 4–5 single-line navigation links */}
+          {/* Zone 2: Desktop navigation links with Lenis smooth scroll */}
           <nav
             className={`hidden md:flex items-center gap-8 text-xs uppercase tracking-[0.2em] font-medium transition-all duration-300 ${
-              showBrandLogo ? 'text-[#C4BAA8]' : 'text-[#C4BAA8]/75 drop-shadow-[0_2px_8px_rgba(0,0,0,0.95)]'
+              showBrandLogo
+                ? 'text-[#C4BAA8]'
+                : 'text-[#C4BAA8]/75 drop-shadow-[0_2px_8px_rgba(0,0,0,0.95)]'
             }`}
           >
             <a
               href="#about"
-              className="hover:text-[#F3DFA2] transition-colors whitespace-nowrap shrink-0 py-2"
+              onClick={(e) => handleNavClick(e, 'about')}
+              className="hover:text-[#F3DFA2] transition-colors whitespace-nowrap shrink-0 py-2 cursor-pointer"
             >
               About
             </a>
             <a
               href="#committees"
-              className="hover:text-[#F3DFA2] transition-colors whitespace-nowrap shrink-0 py-2"
+              onClick={(e) => handleNavClick(e, 'committees')}
+              className="hover:text-[#F3DFA2] transition-colors whitespace-nowrap shrink-0 py-2 cursor-pointer"
             >
               Councils (TBA)
             </a>
             <a
               href="#schedule"
-              className="hover:text-[#F3DFA2] transition-colors whitespace-nowrap shrink-0 py-2"
+              onClick={(e) => handleNavClick(e, 'schedule')}
+              className="hover:text-[#F3DFA2] transition-colors whitespace-nowrap shrink-0 py-2 cursor-pointer"
             >
               Timeline (TBA)
             </a>
             <a
               href="#secretariat"
-              className="hover:text-[#F3DFA2] transition-colors whitespace-nowrap shrink-0 py-2"
+              onClick={(e) => handleNavClick(e, 'secretariat')}
+              className="hover:text-[#F3DFA2] transition-colors whitespace-nowrap shrink-0 py-2 cursor-pointer"
             >
               Secretariat
             </a>
@@ -188,7 +199,7 @@ export const Navigation: React.FC<NavigationProps> = ({
               <a
                 key={item.id}
                 href={`#${item.id}`}
-                onClick={(e) => handleMobileNavClick(e, item.id)}
+                onClick={(e) => handleNavClick(e, item.id)}
                 className="flex items-center justify-between min-h-[52px] px-4 py-3 rounded-xl border border-white/5 bg-[#0C0C0C]/60 font-cinzel text-lg tracking-[0.15em] text-[#E6E1D8] hover:text-[#F3DFA2] hover:border-[#D4AF6A]/40 active:bg-[#D4AF6A]/10 transition-all cursor-pointer"
               >
                 <span>{item.label}</span>

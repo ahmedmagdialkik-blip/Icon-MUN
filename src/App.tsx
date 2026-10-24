@@ -2,7 +2,6 @@ import React, { useState, useEffect, useRef, useCallback } from 'react';
 import gsap from 'gsap';
 import { ScrollTrigger } from 'gsap/ScrollTrigger';
 import Lenis from 'lenis';
-import { CinematicIntro } from './components/CinematicIntro';
 import { Navigation } from './components/Navigation';
 import { HeroCanvasScrubber } from './components/HeroCanvasScrubber';
 import { AboutSection } from './components/AboutSection';
@@ -21,7 +20,6 @@ import { SiteDataProvider } from './lib/SiteData';
 gsap.registerPlugin(ScrollTrigger);
 
 export default function App() {
-  const [isVideoReady, setIsVideoReady] = useState(false);
   const [isRegisterOpen, setIsRegisterOpen] = useState(false);
   const [selectedCommitteeCode, setSelectedCommitteeCode] = useState<string>('UNSC');
   const [showNavLogo, setShowNavLogo] = useState(false);
@@ -30,10 +28,14 @@ export default function App() {
 
   // Initialize Lenis and GSAP ScrollTrigger Synchronization
   useEffect(() => {
+    const prefersReducedMotion =
+      typeof window !== 'undefined' &&
+      window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+
     const lenis = new Lenis({
-      duration: 1.2,
+      duration: prefersReducedMotion ? 0.01 : 1.1,
       easing: (t: number) => Math.min(1, 1.001 - Math.pow(2, -10 * t)),
-      smoothWheel: true,
+      smoothWheel: !prefersReducedMotion,
       syncTouch: false,
     });
     lenisRef.current = lenis;
@@ -78,12 +80,6 @@ export default function App() {
     };
   }, []);
 
-  const handleIntroComplete = useCallback(() => {
-    setTimeout(() => {
-      ScrollTrigger.refresh();
-    }, 150);
-  }, []);
-
   const handleNavigateTo = useCallback((sectionId: string) => {
     const el = document.getElementById(sectionId);
     if (!el) return;
@@ -91,7 +87,7 @@ export default function App() {
     if (lenisRef.current) {
       lenisRef.current.scrollTo(el, {
         offset: sectionId === 'hero-scroll-container' ? 0 : -20,
-        duration: 1.3,
+        duration: 1.2,
       });
     } else {
       el.scrollIntoView({ behavior: 'smooth' });
@@ -109,8 +105,7 @@ export default function App() {
     setIsRegisterOpen(false);
   }, []);
 
-  const handleVideoReady = useCallback(() => {
-    setIsVideoReady(true);
+  const handleHeroReady = useCallback(() => {
     ScrollTrigger.refresh();
   }, []);
 
@@ -121,57 +116,52 @@ export default function App() {
 
   return (
     <SiteDataProvider>
-    <div className="relative min-h-screen bg-[#050505] text-[#E6E1D8] selection:bg-[#D4AF6A]/20 selection:text-[#F3DFA2] overflow-x-hidden">
-      {/* 1. Cinematic Intro (plays once, curtain splits on hero readiness) */}
-      <CinematicIntro
-        isHeroReady={isVideoReady}
-        onComplete={handleIntroComplete}
-      />
+      <div className="relative min-h-screen bg-[#050505] text-[#E6E1D8] selection:bg-[#D4AF6A]/20 selection:text-[#F3DFA2] overflow-x-hidden">
+        {/* 1. Global Floating Gold Dust Particles with Swirl Physics */}
+        <GoldDustCanvas />
 
-      {/* 2. Global Floating Gold Dust Particles with Swirl Physics */}
-      <GoldDustCanvas />
+        {/* 2. Global Scroll Effects: Top Thin Progress Bar, Dot Nav, Faint Rotating UN Globe */}
+        <GlobalScrollEffects onNavigateTo={handleNavigateTo} />
 
-      {/* 3. Global Scroll Effects: Top Thin Progress Bar, Dot Nav, Faint Rotating UN Globe */}
-      <GlobalScrollEffects onNavigateTo={handleNavigateTo} />
+        {/* 3. Custom Gold Ring Cursor */}
+        <CustomCursor />
 
-      {/* 4. Custom Gold Ring Cursor */}
-      <CustomCursor />
+        {/* 4. Sound Toggle (Off by default) */}
+        <AudioAmbience />
 
-      {/* 5. Sound Toggle (Off by default as specified) */}
-      <AudioAmbience />
-
-      {/* 6. Top Navigation (Brand logo hidden until hero title scrolls away) */}
-      <Navigation
-        onOpenRegister={handleOpenRegister}
-        showBrandLogo={showNavLogo}
-      />
-
-      {/* 7. Primary Hero Section with Bidirectional Video Scrubbing */}
-      <main>
-        <HeroCanvasScrubber
-          onHeroReady={handleVideoReady}
-          onHeroProgressChange={handleHeroScrollProgress}
+        {/* 5. Top Navigation (Brand logo seamlessly fades in as hero title scrolls away) */}
+        <Navigation
+          onOpenRegister={handleOpenRegister}
+          showBrandLogo={showNavLogo}
+          onNavigateTo={handleNavigateTo}
         />
 
-        {/* 8. Pinned & Scroll-Scrubbed Sections (No one-shot triggers) */}
-        <AboutSection />
-        <CommitteesSection onSelectCommitteeForRegister={handleOpenRegister} />
-        <ScheduleSection />
-        <SecretariatSection />
-        <RegistrationSection
-          isOpenModal={isRegisterOpen}
-          onCloseModal={handleCloseRegister}
-          onOpenModal={handleOpenRegister}
-          preselectedCommittee={selectedCommitteeCode}
-        />
-      </main>
+        {/* 6. Primary Hero Section with Direct Bidirectional Frame Scrubbing */}
+        <main>
+          <HeroCanvasScrubber
+            onHeroReady={handleHeroReady}
+            onHeroProgressChange={handleHeroScrollProgress}
+          />
 
-      {/* 9. Scroll-Scrubbed Footer */}
-      <FooterSection />
+          {/* 7. Pinned & Scroll-Scrubbed Sections */}
+          <AboutSection />
+          <CommitteesSection onSelectCommitteeForRegister={handleOpenRegister} />
+          <ScheduleSection />
+          <SecretariatSection />
+          <RegistrationSection
+            isOpenModal={isRegisterOpen}
+            onCloseModal={handleCloseRegister}
+            onOpenModal={handleOpenRegister}
+            preselectedCommittee={selectedCommitteeCode}
+          />
+        </main>
 
-      {/* Dev-only FPS meter: open the site with ?perf */}
-      {typeof window !== 'undefined' && window.location.search.includes('perf') && <PerfHUD />}
-    </div>
+        {/* 8. Scroll-Scrubbed Footer */}
+        <FooterSection />
+
+        {/* Dev-only FPS meter: open the site with ?perf */}
+        {typeof window !== 'undefined' && window.location.search.includes('perf') && <PerfHUD />}
+      </div>
     </SiteDataProvider>
   );
 }

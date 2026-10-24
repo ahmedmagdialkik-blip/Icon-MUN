@@ -20,13 +20,15 @@ export const HeroCanvasScrubber: React.FC<HeroCanvasScrubberProps> = ({
   const stickyRef = useRef<HTMLDivElement | null>(null);
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const canvasWrapRef = useRef<HTMLDivElement | null>(null);
+  const headerRef = useRef<HTMLDivElement | null>(null);
   const glowRef = useRef<HTMLDivElement | null>(null);
   const videoFallbackRef = useRef<HTMLVideoElement | null>(null);
 
-  // Captions refs to animate with hardware-accelerated GSAP without triggering React re-renders
+  // Captions and scroll prompt refs
   const caption1Ref = useRef<HTMLParagraphElement | null>(null);
   const caption2Ref = useRef<HTMLParagraphElement | null>(null);
   const caption3Ref = useRef<HTMLParagraphElement | null>(null);
+  const scrollIndicatorRef = useRef<HTMLDivElement | null>(null);
 
   const [useVideoFallback, setUseVideoFallback] = useState(false);
 
@@ -35,7 +37,6 @@ export const HeroCanvasScrubber: React.FC<HeroCanvasScrubberProps> = ({
   const readyRef = useRef<Uint8Array>(new Uint8Array(TOTAL_FRAMES));
   const ctxRef = useRef<CanvasRenderingContext2D | null>(null);
   const currentRenderFrameRef = useRef(0);
-  const targetRenderFrameRef = useRef(0);
   const drawnSourceRef = useRef(-1); // frame index actually painted last
   const viewDirtyRef = useRef(true); // true after resize -> force a repaint
   const isFirstFrameLoadedRef = useRef(false);
@@ -46,7 +47,7 @@ export const HeroCanvasScrubber: React.FC<HeroCanvasScrubberProps> = ({
 
   // Update canvas dimensions cache.
   // The backing store is capped to the source frame's native resolution: drawing a
-  // 1280px frame into a 2880px retina canvas only burns GPU time for no extra detail.
+  // 1280px frame into a 2880px retina canvas burns GPU time for no extra detail.
   const updateViewportSize = useCallback(() => {
     if (typeof window === 'undefined') return;
     const w = window.innerWidth;
@@ -73,7 +74,7 @@ export const HeroCanvasScrubber: React.FC<HeroCanvasScrubberProps> = ({
 
   // Nearest frame that is fully loaded + decoded (so a not-yet-loaded frame never
   // makes the hero freeze or flash; it shows the closest available one instead).
-  const pickReadyFrame = (idx: number) => {
+  const pickReadyFrame = useCallback((idx: number) => {
     const ready = readyRef.current;
     if (ready[idx]) return idx;
     for (let d = 1; d < TOTAL_FRAMES; d++) {
@@ -81,79 +82,62 @@ export const HeroCanvasScrubber: React.FC<HeroCanvasScrubberProps> = ({
       if (idx + d < TOTAL_FRAMES && ready[idx + d]) return idx + d;
     }
     return -1;
-  };
-
-  // Render a specific frame onto the canvas with centered cover fit
-  const drawFrame = useCallback((frameIdx: number) => {
-    const canvas = canvasRef.current;
-    if (!canvas) return;
-
-    const src = pickReadyFrame(frameIdx);
-    if (src < 0) return;
-    // Nothing new to paint
-    if (src === drawnSourceRef.current && !viewDirtyRef.current) return;
-
-    const img = framesRef.current[src];
-    if (!img || img.naturalWidth === 0) return;
-
-    if (!ctxRef.current) {
-      ctxRef.current = canvas.getContext('2d', { alpha: false });
-    }
-    const ctx = ctxRef.current;
-    if (!ctx) return;
-
-    const { width: targetW, height: targetH, dpr } = viewportSizeRef.current;
-    if (targetW === 0 || targetH === 0) return;
-
-    drawnSourceRef.current = src;
-    viewDirtyRef.current = false;
-
-    // Object-fit cover logic centered directly on the mannequin
-    const iw = img.naturalWidth;
-    const ih = img.naturalHeight;
-    const r = Math.max(targetW / iw, targetH / ih);
-    const nw = iw * r;
-    const nh = ih * r;
-    const ox = (targetW - nw) / 2;
-    const oy = (targetH - nh) / 2;
-
-    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
-    ctx.drawImage(img, ox, oy, nw, nh);
   }, []);
 
-  // Render loop. It runs on GSAP's ticker, AFTER Lenis has updated the scroll position
-  // in the same frame (App registers Lenis with priority), so there is no one-frame lag.
-  // The easing is frame-rate independent (same feel at 60Hz, 120Hz or a laggy frame).
-  useEffect(() => {
-    const tick = (_time: number, deltaTime: number) => {
-      if (useVideoFallback || !isFirstFrameLoadedRef.current) return;
+  // Render a specific frame onto the canvas with centered cover fit
+  const drawFrame = useCallback(
+    (frameIdx: number) => {
+      const canvas = canvasRef.current;
+      if (!canvas) return;
 
-      const target = targetRenderFrameRef.current;
-      const current = currentRenderFrameRef.current;
-      const diff = target - current;
+      const src = pickReadyFrame(frameIdx);
+      if (src < 0) return;
+      // Nothing new to paint
+      if (src === drawnSourceRef.current && !viewDirtyRef.current) return;
 
-      if (Math.abs(diff) > 0.05) {
-        const dt = Math.min(Math.max(deltaTime || 16.7, 1), 50);
-        const k = 1 - Math.pow(1 - 0.28, dt / 16.667);
-        currentRenderFrameRef.current = current + diff * k;
-      } else {
-        currentRenderFrameRef.current = target;
+      const img = framesRef.current[src];
+      if (!img || img.naturalWidth === 0) return;
+
+      if (!ctxRef.current) {
+        ctxRef.current = canvas.getContext('2d', { alpha: false });
       }
+      const ctx = ctxRef.current;
+      if (!ctx) return;
 
-      const frameToDraw = Math.min(
-        Math.max(Math.round(currentRenderFrameRef.current), 0),
-        TOTAL_FRAMES - 1
-      );
-      drawFrame(frameToDraw);
+      const { width: targetW, height: targetH, dpr } = viewportSizeRef.current;
+      if (targetW === 0 || targetH === 0) return;
+
+      drawnSourceRef.current = src;
+      viewDirtyRef.current = false;
+
+      // Object-fit cover logic centered directly on the mannequin
+      const iw = img.naturalWidth;
+      const ih = img.naturalHeight;
+      const r = Math.max(targetW / iw, targetH / ih);
+      const nw = iw * r;
+      const nh = ih * r;
+      const ox = (targetW - nw) / 2;
+      const oy = (targetH - nh) / 2;
+
+      ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+      ctx.drawImage(img, ox, oy, nw, nh);
+    },
+    [pickReadyFrame]
+  );
+
+  // Lightweight frame refresh check on ticker only when view is marked dirty (e.g. after resize)
+  useEffect(() => {
+    const tick = () => {
+      if (viewDirtyRef.current && isFirstFrameLoadedRef.current) {
+        drawFrame(currentRenderFrameRef.current);
+      }
     };
-
     gsap.ticker.add(tick);
     return () => gsap.ticker.remove(tick);
-  }, [drawFrame, useVideoFallback]);
+  }, [drawFrame]);
 
   // Frame loading: frame 1 first for an instant paint, then the rest through a small
-  // download pool. Every frame is decode()d before it counts as ready, so the first
-  // time it is drawn during scroll there is no JPEG-decode hitch.
+  // download pool. Every frame is decoded before it counts as ready.
   useEffect(() => {
     updateViewportSize();
 
@@ -171,14 +155,16 @@ export const HeroCanvasScrubber: React.FC<HeroCanvasScrubberProps> = ({
     const frameUrl = (folder: string, n: number) =>
       `${folder}/frame_${String(n).padStart(3, '0')}.jpg`;
 
-    // Resolve once the image is decoded (or give up on decode and still resolve)
     const loadImage = (n: number, folder: string) =>
       new Promise<HTMLImageElement>((resolve, reject) => {
         const img = new Image();
         img.decoding = 'async';
         img.onload = () => {
           if (typeof img.decode === 'function') {
-            img.decode().then(() => resolve(img), () => resolve(img));
+            img.decode().then(
+              () => resolve(img),
+              () => resolve(img)
+            );
           } else {
             resolve(img);
           }
@@ -214,7 +200,7 @@ export const HeroCanvasScrubber: React.FC<HeroCanvasScrubberProps> = ({
               readyRef.current[n - 1] = 1;
             })
             .catch(() => {
-              /* a missing frame is skipped; nearest ready frame is shown instead */
+              /* missing frame skipped; nearest ready frame shown */
             })
             .finally(() => {
               active--;
@@ -234,7 +220,7 @@ export const HeroCanvasScrubber: React.FC<HeroCanvasScrubberProps> = ({
         readyRef.current[0] = 1;
         nativeSizeRef.current = { w: img.naturalWidth, h: img.naturalHeight };
         isFirstFrameLoadedRef.current = true;
-        updateViewportSize(); // re-run now that the native size is known
+        updateViewportSize();
         drawFrame(0);
         if (onHeroReady) onHeroReady();
         startRemaining();
@@ -247,7 +233,8 @@ export const HeroCanvasScrubber: React.FC<HeroCanvasScrubberProps> = ({
 
     const handleResize = () => {
       updateViewportSize();
-      drawFrame(Math.round(currentRenderFrameRef.current));
+      viewDirtyRef.current = true;
+      drawFrame(currentRenderFrameRef.current);
     };
 
     window.addEventListener('resize', handleResize);
@@ -259,11 +246,18 @@ export const HeroCanvasScrubber: React.FC<HeroCanvasScrubberProps> = ({
     };
   }, [drawFrame, onHeroReady, updateViewportSize]);
 
-  // Master ScrollTrigger Timeline for Hero (Pinned 180vh mobile, 250vh desktop, smooth scrub)
+  // Master ScrollTrigger Timeline for Hero
+  // Adjusted scroll length (160vh mobile, 200vh desktop) for intentional, responsive pacing.
+  // scrub: true locks frame rendering and captions directly to the Lenis-smoothed scroll,
+  // eliminating competing lerp loops and input lag.
   useEffect(() => {
     const container = containerRef.current;
     const sticky = stickyRef.current;
     if (!container || !sticky) return;
+
+    const prefersReducedMotion =
+      typeof window !== 'undefined' &&
+      window.matchMedia('(prefers-reduced-motion: reduce)').matches;
 
     const ctx = gsap.context(() => {
       const tl = gsap.timeline({
@@ -273,10 +267,15 @@ export const HeroCanvasScrubber: React.FC<HeroCanvasScrubberProps> = ({
           end: 'bottom bottom',
           pin: sticky,
           pinSpacing: true,
-          scrub: 0.8, // Smooth scrub for buttery transition
+          scrub: prefersReducedMotion ? false : true,
           onUpdate: (self) => {
             const p = self.progress;
-            targetRenderFrameRef.current = p * (TOTAL_FRAMES - 1);
+            const targetFrame = Math.min(
+              Math.max(Math.round(p * (TOTAL_FRAMES - 1)), 0),
+              TOTAL_FRAMES - 1
+            );
+            currentRenderFrameRef.current = targetFrame;
+            drawFrame(targetFrame);
 
             if (onHeroProgressChange) {
               onHeroProgressChange(p);
@@ -290,81 +289,137 @@ export const HeroCanvasScrubber: React.FC<HeroCanvasScrubberProps> = ({
         },
       });
 
-      // 1. Subtle scale and exit fade on canvas
-      if (canvasWrapRef.current) {
+      // 1. Subtle, grounded scale on canvas (Visual stays 100% visible: NO fade to black)
+      if (canvasWrapRef.current && !prefersReducedMotion) {
         tl.fromTo(
           canvasWrapRef.current,
           { scale: 1 },
-          { scale: 1.05, ease: 'none', duration: 1 },
+          { scale: 1.03, ease: 'none', duration: 1 },
           0
-        );
-        tl.to(
-          canvasWrapRef.current,
-          { opacity: 0, ease: 'power2.in', duration: 0.12 },
-          0.88
         );
       }
 
-      // 2. Glow overlay pulsing
-      if (glowRef.current) {
+      // 2. Radial gold glow overlay breathing
+      if (glowRef.current && !prefersReducedMotion) {
         tl.fromTo(
           glowRef.current,
-          { opacity: 0.1, scale: 0.85 },
-          { opacity: 0.65, scale: 1.15, ease: 'none', duration: 0.8 },
+          { opacity: 0.1, scale: 0.9 },
+          { opacity: 0.5, scale: 1.1, ease: 'none', duration: 0.8 },
           0
         );
       }
 
-      // 3. Captions sequence without React re-renders
-      // Caption 1: 0 - 0.28
+      // 3. Top Heading ("ICON MUN"):
+      // Fully visible at start (0 - 0.16), then smoothly ascends and clears out (0.16 - 0.26)
+      // just as the navbar takes over the brand logo at 0.22, keeping the mannequin as the pure visual focus.
+      if (headerRef.current) {
+        tl.fromTo(
+          headerRef.current,
+          { opacity: 1, y: 0 },
+          {
+            opacity: 0,
+            y: prefersReducedMotion ? 0 : -20,
+            ease: 'power1.in',
+            duration: 0.1,
+          },
+          0.16
+        );
+      }
+
+      // 4. "Scroll To Reveal" indicator: fades out early (0.10 - 0.18) so it doesn't distract
+      if (scrollIndicatorRef.current) {
+        tl.fromTo(
+          scrollIndicatorRef.current,
+          { opacity: 1 },
+          { opacity: 0, ease: 'power1.in', duration: 0.08 },
+          0.1
+        );
+      }
+
+      // 5. Captions sequence: strictly non-overlapping, deliberate timing
+      // Caption 1: "Every nation has a face." (Visible 0 - 0.18, exits 0.18 - 0.26)
       if (caption1Ref.current) {
         tl.fromTo(
           caption1Ref.current,
           { opacity: 1, y: 0 },
-          { opacity: 0, y: -16, ease: 'power1.inOut', duration: 0.1 },
-          0.22
+          {
+            opacity: 0,
+            y: prefersReducedMotion ? 0 : -14,
+            ease: 'power1.inOut',
+            duration: 0.08,
+          },
+          0.18
         );
       }
 
-      // Caption 2: 0.28 - 0.65
+      // Window 0.26 - 0.32: Clean silence & focus on mannequin as mask starts to lift
+
+      // Caption 2: "But behind every mask…" (Enters 0.32 - 0.40, holds 0.40 - 0.58, exits 0.58 - 0.66)
       if (caption2Ref.current) {
         tl.fromTo(
           caption2Ref.current,
-          { opacity: 0, y: 16 },
-          { opacity: 1, y: 0, ease: 'power1.inOut', duration: 0.1 },
-          0.28
+          { opacity: 0, y: prefersReducedMotion ? 0 : 14 },
+          {
+            opacity: 1,
+            y: 0,
+            ease: 'power1.inOut',
+            duration: 0.08,
+          },
+          0.32
         );
         tl.to(
           caption2Ref.current,
-          { opacity: 0, y: -16, ease: 'power1.inOut', duration: 0.1 },
+          {
+            opacity: 0,
+            y: prefersReducedMotion ? 0 : -14,
+            ease: 'power1.inOut',
+            duration: 0.08,
+          },
           0.58
         );
       }
 
-      // Caption 3: 0.65 - 1.0
+      // Window 0.66 - 0.72: Clean silence & focus on mannequin as mask is lifted
+
+      // Caption 3: "…is a delegate ready to lead." (Enters 0.72 - 0.80, holds in gold shimmer 0.80 - 0.94, soft ease 0.94 - 1.00)
       if (caption3Ref.current) {
         tl.fromTo(
           caption3Ref.current,
-          { opacity: 0, y: 16 },
-          { opacity: 1, y: 0, ease: 'power1.inOut', duration: 0.12 },
-          0.64
+          { opacity: 0, y: prefersReducedMotion ? 0 : 14 },
+          {
+            opacity: 1,
+            y: 0,
+            ease: 'power1.inOut',
+            duration: 0.08,
+          },
+          0.72
+        );
+        tl.to(
+          caption3Ref.current,
+          {
+            opacity: 0,
+            y: prefersReducedMotion ? 0 : -10,
+            ease: 'power1.inOut',
+            duration: 0.06,
+          },
+          0.94
         );
       }
     }, container);
 
     return () => ctx.revert();
-  }, [onHeroProgressChange, useVideoFallback]);
+  }, [drawFrame, onHeroProgressChange, useVideoFallback]);
 
   return (
     <div
       ref={containerRef}
       id="hero-scroll-container"
-      className="relative w-full bg-[#050505] h-[180vh] md:h-[250vh]"
+      className="relative w-full bg-[#050505] h-[160vh] md:h-[200vh]"
     >
       {/* Pinned Viewport Hero Section with 100dvh fallback */}
       <div
         ref={stickyRef}
-        className="h-screen-dvh w-full overflow-hidden bg-[#050505] flex flex-col justify-between"
+        className="h-screen-dvh w-full overflow-hidden bg-[#050505] flex flex-col justify-between relative"
       >
         {/* Visual Media Layer: Canvas Frame Sequence */}
         <div
@@ -391,32 +446,51 @@ export const HeroCanvasScrubber: React.FC<HeroCanvasScrubberProps> = ({
           )}
         </div>
 
+        {/* Top Scrim Gradient for Guaranteed Text Readability */}
+        <div
+          className="pointer-events-none absolute inset-x-0 top-0 h-44 z-15"
+          style={{
+            background:
+              'linear-gradient(to bottom, rgba(5,5,5,0.85) 0%, rgba(5,5,5,0.45) 60%, transparent 100%)',
+          }}
+        />
+
         {/* Radial Gold Glow Overlay */}
         <div
           ref={glowRef}
           className="pointer-events-none absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 h-[320px] sm:h-[480px] w-[320px] sm:w-[480px] rounded-full z-10 will-change-transform opacity-10"
           style={{
             background:
-              'radial-gradient(circle, rgba(212,175,106,0.3) 0%, rgba(90,15,30,0.18) 45%, transparent 70%)',
+              'radial-gradient(circle, rgba(212,175,106,0.25) 0%, rgba(90,15,30,0.15) 45%, transparent 70%)',
           }}
         />
 
-        {/* Soft Radial Vignette Overlay */}
+        {/* Center Vignette Overlay */}
         <div
           className="pointer-events-none absolute inset-0 z-15"
           style={{
             background:
-              'radial-gradient(circle at center, transparent 35%, rgba(5,5,5,0.6) 80%, #050505 100%)',
+              'radial-gradient(circle at center, transparent 35%, rgba(5,5,5,0.55) 80%, #050505 100%)',
+          }}
+        />
+
+        {/* Bottom Scrim Gradient for Deliberate, Grounded Transition into About Section */}
+        <div
+          className="pointer-events-none absolute inset-x-0 bottom-0 h-48 z-15"
+          style={{
+            background:
+              'linear-gradient(to top, #050505 0%, rgba(5,5,5,0.85) 40%, rgba(5,5,5,0.25) 75%, transparent 100%)',
           }}
         />
 
         {/* ================================================================= */}
-        {/* SAFE ZONE 1 (TOP): SINGLE "ICON MUN" HTML TITLE                   */}
+        {/* SAFE ZONE 1 (TOP): ICON MUN HEADING                               */}
         {/* ================================================================= */}
         <div
-          className="relative z-20 px-4 sm:px-6 flex flex-col items-center justify-center text-center pointer-events-none select-none"
+          ref={headerRef}
+          className="relative z-20 px-4 sm:px-6 flex flex-col items-center justify-center text-center pointer-events-none select-none will-change-transform"
           style={{
-            paddingTop: 'max(1rem, env(safe-area-inset-top, 0px))',
+            paddingTop: 'max(1.25rem, env(safe-area-inset-top, 0px))',
           }}
         >
           <div className="inline-flex items-center gap-1.5 sm:gap-2 text-[clamp(0.6rem,2vw,0.75rem)] font-semibold uppercase tracking-[0.22em] sm:tracking-[0.35em] text-[#D4AF6A] mb-1 opacity-90 drop-shadow-[0_2px_8px_rgba(0,0,0,0.95)]">
@@ -425,7 +499,6 @@ export const HeroCanvasScrubber: React.FC<HeroCanvasScrubberProps> = ({
             <span>2027 Edition · Details TBA</span>
           </div>
 
-          {/* Guaranteed single-line at 360px width with fluid clamp */}
           <h1
             className="font-cinzel text-[clamp(1.85rem,7.5vw,5rem)] font-black uppercase tracking-[0.16em] sm:tracking-[0.24em] md:tracking-[0.32em] text-gold-shimmer filter drop-shadow-[0_4px_25px_rgba(0,0,0,0.95)] whitespace-nowrap"
             style={{
@@ -440,7 +513,7 @@ export const HeroCanvasScrubber: React.FC<HeroCanvasScrubberProps> = ({
           </p>
         </div>
 
-        {/* SAFE ZONE 2 (MIDDLE): CLEAR SPACE AROUND MANNEQUIN */}
+        {/* SAFE ZONE 2 (MIDDLE): CLEAR VISUAL FOCUS ON MANNEQUIN */}
         <div className="flex-1 pointer-events-none" />
 
         {/* ================================================================= */}
@@ -449,12 +522,12 @@ export const HeroCanvasScrubber: React.FC<HeroCanvasScrubberProps> = ({
         <div
           className="relative z-20 px-4 sm:px-6 flex flex-col items-center justify-center text-center pointer-events-none select-none"
           style={{
-            paddingBottom: 'max(1.25rem, env(safe-area-inset-bottom, 0px))',
+            paddingBottom: 'max(1.5rem, env(safe-area-inset-bottom, 0px))',
           }}
         >
-          {/* Caption Box */}
-          <div className="relative min-h-[3.25rem] sm:min-h-[4rem] flex items-center justify-center w-full max-w-xl">
-            {/* Caption 1: 0–30% */}
+          {/* Caption Box with guaranteed height & centering */}
+          <div className="relative min-h-[3.5rem] sm:min-h-[4.5rem] flex items-center justify-center w-full max-w-xl">
+            {/* Caption 1: 0–26% */}
             <p
               ref={caption1Ref}
               className="absolute font-cinzel text-[clamp(0.85rem,3.2vw,1.4rem)] uppercase tracking-[0.14em] sm:tracking-[0.2em] text-[#FFF3D6] font-medium leading-relaxed drop-shadow-[0_2px_12px_rgba(0,0,0,0.95)] will-change-transform"
@@ -462,7 +535,7 @@ export const HeroCanvasScrubber: React.FC<HeroCanvasScrubberProps> = ({
               Every nation has a face.
             </p>
 
-            {/* Caption 2: 30–65% */}
+            {/* Caption 2: 32–66% */}
             <p
               ref={caption2Ref}
               className="absolute font-cinzel text-[clamp(0.85rem,3.2vw,1.4rem)] uppercase tracking-[0.14em] sm:tracking-[0.2em] text-[#F3DFA2] font-medium leading-relaxed drop-shadow-[0_2px_12px_rgba(0,0,0,0.95)] opacity-0 will-change-transform"
@@ -470,7 +543,7 @@ export const HeroCanvasScrubber: React.FC<HeroCanvasScrubberProps> = ({
               But behind every mask…
             </p>
 
-            {/* Caption 3: 65–100% */}
+            {/* Caption 3: 72–100% */}
             <p
               ref={caption3Ref}
               className="absolute font-cinzel text-[clamp(0.85rem,3.2vw,1.4rem)] uppercase tracking-[0.14em] sm:tracking-[0.2em] text-gold-shimmer font-semibold leading-relaxed drop-shadow-[0_2px_12px_rgba(0,0,0,0.95)] opacity-0 will-change-transform"
@@ -480,7 +553,10 @@ export const HeroCanvasScrubber: React.FC<HeroCanvasScrubberProps> = ({
           </div>
 
           {/* Scroll Down Indicator */}
-          <div className="mt-2 sm:mt-3 flex flex-col items-center gap-1 text-[#D4AF6A]/70 text-[9px] sm:text-[10px] uppercase tracking-[0.3em] font-mono">
+          <div
+            ref={scrollIndicatorRef}
+            className="mt-2 sm:mt-3 flex flex-col items-center gap-1 text-[#D4AF6A]/80 text-[9px] sm:text-[10px] uppercase tracking-[0.3em] font-mono will-change-transform"
+          >
             <span className="hidden sm:inline">Scroll To Reveal</span>
             <ChevronDown className="h-4 w-4 animate-bounce text-[#D4AF6A]" />
           </div>
